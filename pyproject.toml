@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soccer_analytics"
+authors = [{name = "Andrew Schechtman-Rook", email = "rook166@gmail.com"}]
+description = "Utilities for soccer analytics"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0"}
+dependencies = [
+    "kloppy>=3.12",
+    "pandas>=2.1"
+]
+dynamic = ["version"]
+
+[tool.setuptools]
+packages = ["soccer_analytics"]
+
+[tool.setuptools.dynamic]
+version = {attr = "soccer_analytics.__version__"}
