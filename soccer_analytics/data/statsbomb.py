@@ -79,6 +79,7 @@ def get_metadata():
     competitions = [value for _, value in competitions.items()]
     return competitions
 
+
 if __name__ == "__main__":
     metadata = get_metadata()
     breakpoint()
