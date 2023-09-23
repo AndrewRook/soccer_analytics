@@ -2,6 +2,7 @@ import requests
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from kloppy.domain import EventFactory, create_event, ShotEvent
 from typing import List
 
 URL_PREFIX = "https://raw.githubusercontent.com/statsbomb/open-data/master/data/"
@@ -35,7 +36,7 @@ class Competition:
     international: bool
     seasons: List[Season] = field(default_factory=list)
 
-def get_metadata():
+def _get_metadata():
     competitions_json = requests.get(COMPETITIONS_URL).json()
     competitions = {}
     for competition in competitions_json:
@@ -78,6 +79,35 @@ def get_metadata():
 
     competitions = [value for _, value in competitions.items()]
     return competitions
+
+
+class Metadata:
+    def __init__(self):
+        self.metadata = None
+
+    def __call__(self, use_cache=True):
+        if use_cache is False or self.metadata is None:
+            self.metadata = _get_metadata()
+        return self.metadata
+
+
+get_metadata = Metadata()
+
+
+@dataclass(repr=False)
+class StatsBombShotEvent(ShotEvent):
+    statsbomb_xg: float = None
+    is_penalty: bool = False
+
+
+class StatsBombEventFactory(EventFactory):
+    def build_shot(self, **kwargs) -> ShotEvent:
+        kwargs['statsbomb_xg'] = kwargs['raw_event']['shot']['statsbomb_xg']
+        kwargs['is_penalty'] = kwargs["raw_event"]["shot"]["type"]["name"] == "Penalty"
+        return create_event(StatsBombShotEvent, **kwargs)
+
+
+STATSBOMB_EVENT_FACTORY = StatsBombEventFactory()
 
 
 if __name__ == "__main__":
