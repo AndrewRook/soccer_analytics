@@ -1,9 +1,13 @@
+import json
 import requests
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from kloppy.domain import EventFactory, create_event, ShotEvent
-from typing import List
+from datetime import datetime, timedelta
+from kloppy import statsbomb as kloppy_statsbomb
+from kloppy.domain import create_event
+from kloppy.domain.models.statsbomb.event import StatsBombEventFactory, StatsBombShotEvent, StatsBombPassEvent
+from pathlib import Path
+from typing import List, Optional
 
 URL_PREFIX = "https://raw.githubusercontent.com/statsbomb/open-data/master/data/"
 MATCHES_PREFIX = f"{URL_PREFIX}matches/"
@@ -95,21 +99,77 @@ get_metadata = Metadata()
 
 
 @dataclass(repr=False)
-class StatsBombShotEvent(ShotEvent):
+class CustomStatsBombShotEvent(StatsBombShotEvent):
     statsbomb_xg: float = None
     is_penalty: bool = False
+    absolute_timestamp: datetime = None
 
 
-class StatsBombEventFactory(EventFactory):
-    def build_shot(self, **kwargs) -> ShotEvent:
+@dataclass(repr=False)
+class CustomStatsBombPassEvent(StatsBombPassEvent):
+    absolute_timestamp: datetime = None
+
+
+class CustomStatsBombEventFactory(StatsBombEventFactory):
+    def __init__(self, game_start_timestamp: datetime):
+        self.game_start_timestamp = game_start_timestamp
+
+    def build_shot(self, **kwargs) -> StatsBombShotEvent:
         kwargs['statsbomb_xg'] = kwargs['raw_event']['shot']['statsbomb_xg']
         kwargs['is_penalty'] = kwargs["raw_event"]["shot"]["type"]["name"] == "Penalty"
-        return create_event(StatsBombShotEvent, **kwargs)
+        kwargs['absolute_timestamp'] = self.game_start_timestamp + timedelta(seconds=kwargs["timestamp"])
+        return create_event(CustomStatsBombShotEvent, **kwargs)
+
+    def build_pass(self, **kwargs) -> StatsBombPassEvent:
+        kwargs['absolute_timestamp'] = self.game_start_timestamp + timedelta(seconds=kwargs["timestamp"])
+        return create_event(CustomStatsBombPassEvent, **kwargs)
 
 
-STATSBOMB_EVENT_FACTORY = StatsBombEventFactory()
+def get_events(season: Season, event_types: Optional[list[str]] = None):
+    data_dir = Path(__file__).parent.parent.parent / "data"
+    event_dir = data_dir / "statsbomb" / "events"
+    lineup_dir = data_dir / "statsbomb" / "lineups"
+    event_list = []
+    for match in season.matches:
+        event_file = event_dir / f"{match.match_id}.json"
+        lineup_file = lineup_dir / f"{match.match_id}.json"
+        if event_file.is_file() is False:
+            event_data = requests.get(
+                f"https://raw.githubusercontent.com/statsbomb/open-data/master/data/events/{match.match_id}.json"
+            )
+            with open(event_file, "w") as f:
+                json.dump(event_data.json(), f)
+        if lineup_file.is_file() is False:
+            lineup_data = requests.get(
+                f"https://raw.githubusercontent.com/statsbomb/open-data/master/data/lineups/{match.match_id}.json"
+            )
+        with open(lineup_file, "w") as f:
+            json.dump(lineup_data.json(), f)
+
+        try:
+            events = kloppy_statsbomb.load(
+                event_file, lineup_file,
+                event_types=event_types, coordinates="statsbomb",
+                event_factory=CustomStatsBombEventFactory(match.match_datetime)
+            )
+        except json.JSONDecodeError:
+            print(f"Parse error for match_id {match.match_id}")
+
+        event_list.extend(events)
+
+    return event_list
+
 
 
 if __name__ == "__main__":
-    metadata = get_metadata()
+    from pathlib import Path
+    from kloppy.statsbomb import load
+    data_path = Path(__file__).parent.parent.parent / "data" / "statsbomb"
+    events = load(
+        data_path / "events" / "7298.json" ,
+        data_path / "lineups" / "7298.json",
+        event_types=["shot"],
+        coordinates="statsbomb",
+        event_factory=CustomStatsBombEventFactory(datetime.strptime("2021-01-01_12:00:00", "%Y-%m-%d_%H:%M:%S"))
+    )
     breakpoint()
