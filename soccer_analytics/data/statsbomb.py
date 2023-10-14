@@ -129,6 +129,8 @@ def get_events(season: Season, event_types: Optional[list[str]] = None):
     data_dir = Path(__file__).parent.parent.parent / "data"
     event_dir = data_dir / "statsbomb" / "events"
     lineup_dir = data_dir / "statsbomb" / "lineups"
+    lineup_dir.mkdir(parents=True, exist_ok=True)
+    event_dir.mkdir(parents=True, exist_ok=True)
     event_list = []
     for match in season.matches:
         event_file = event_dir / f"{match.match_id}.json"
@@ -143,8 +145,8 @@ def get_events(season: Season, event_types: Optional[list[str]] = None):
             lineup_data = requests.get(
                 f"https://raw.githubusercontent.com/statsbomb/open-data/master/data/lineups/{match.match_id}.json"
             )
-        with open(lineup_file, "w") as f:
-            json.dump(lineup_data.json(), f)
+            with open(lineup_file, "w") as f:
+                json.dump(lineup_data.json(), f)
 
         try:
             events = kloppy_statsbomb.load(
@@ -152,10 +154,10 @@ def get_events(season: Season, event_types: Optional[list[str]] = None):
                 event_types=event_types, coordinates="statsbomb",
                 event_factory=CustomStatsBombEventFactory(match.match_datetime)
             )
+            event_list.extend(events)
         except json.JSONDecodeError:
             print(f"Parse error for match_id {match.match_id}")
 
-        event_list.extend(events)
 
     return event_list
 
