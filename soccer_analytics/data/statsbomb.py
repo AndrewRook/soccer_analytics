@@ -103,6 +103,8 @@ get_metadata = Metadata()
 class CustomStatsBombShotEvent(StatsBombShotEvent):
     statsbomb_xg: float = None
     is_penalty: bool = False
+    is_first_time: bool = False
+    technique: str = ""
     absolute_timestamp: datetime = None
 
 
@@ -118,6 +120,11 @@ class CustomStatsBombEventFactory(StatsBombEventFactory):
     def build_shot(self, **kwargs) -> StatsBombShotEvent:
         kwargs['statsbomb_xg'] = kwargs['raw_event']['shot']['statsbomb_xg']
         kwargs['is_penalty'] = kwargs["raw_event"]["shot"]["type"]["name"] == "Penalty"
+        try:
+            kwargs["is_first_time"] = kwargs["raw_event"]["shot"]["first_time"]
+        except KeyError:
+            kwargs["is_first_time"] = None
+        kwargs["technique"] = kwargs["raw_event"]["shot"]["technique"]["name"]
         kwargs['absolute_timestamp'] = self.game_start_timestamp + timedelta(seconds=kwargs["timestamp"])
         return create_event(CustomStatsBombShotEvent, **kwargs)
 
