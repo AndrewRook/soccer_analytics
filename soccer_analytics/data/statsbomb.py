@@ -123,7 +123,7 @@ class CustomStatsBombEventFactory(StatsBombEventFactory):
         try:
             kwargs["is_first_time"] = kwargs["raw_event"]["shot"]["first_time"]
         except KeyError:
-            kwargs["is_first_time"] = None
+            kwargs["is_first_time"] = False  # For some reason it's not present if not true
         kwargs["technique"] = kwargs["raw_event"]["shot"]["technique"]["name"]
         kwargs['absolute_timestamp'] = self.game_start_timestamp + timedelta(seconds=kwargs["timestamp"])
         return create_event(CustomStatsBombShotEvent, **kwargs)
