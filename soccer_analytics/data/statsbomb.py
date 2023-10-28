@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from kloppy import statsbomb as kloppy_statsbomb
 from kloppy.domain import create_event
+from kloppy.domain.models.event import EventDataset
 from kloppy.domain.models.statsbomb.event import StatsBombEventFactory, StatsBombShotEvent, StatsBombPassEvent
 from pathlib import Path
 from typing import List, Optional
@@ -102,6 +103,8 @@ get_metadata = Metadata()
 class CustomStatsBombShotEvent(StatsBombShotEvent):
     statsbomb_xg: float = None
     is_penalty: bool = False
+    is_first_time: bool = False
+    technique: str = ""
     absolute_timestamp: datetime = None
 
 
@@ -117,6 +120,11 @@ class CustomStatsBombEventFactory(StatsBombEventFactory):
     def build_shot(self, **kwargs) -> StatsBombShotEvent:
         kwargs['statsbomb_xg'] = kwargs['raw_event']['shot']['statsbomb_xg']
         kwargs['is_penalty'] = kwargs["raw_event"]["shot"]["type"]["name"] == "Penalty"
+        try:
+            kwargs["is_first_time"] = kwargs["raw_event"]["shot"]["first_time"]
+        except KeyError:
+            kwargs["is_first_time"] = False  # For some reason it's not present if not true
+        kwargs["technique"] = kwargs["raw_event"]["shot"]["technique"]["name"]
         kwargs['absolute_timestamp'] = self.game_start_timestamp + timedelta(seconds=kwargs["timestamp"])
         return create_event(CustomStatsBombShotEvent, **kwargs)
 
@@ -125,13 +133,13 @@ class CustomStatsBombEventFactory(StatsBombEventFactory):
         return create_event(CustomStatsBombPassEvent, **kwargs)
 
 
-def get_events(season: Season, event_types: Optional[list[str]] = None):
+def get_events(season: Season, event_types: Optional[list[str]] = None) -> List[EventDataset]:
     data_dir = Path(__file__).parent.parent.parent / "data"
     event_dir = data_dir / "statsbomb" / "events"
     lineup_dir = data_dir / "statsbomb" / "lineups"
     lineup_dir.mkdir(parents=True, exist_ok=True)
     event_dir.mkdir(parents=True, exist_ok=True)
-    event_list = []
+    match_datasets = []
     for match in season.matches:
         event_file = event_dir / f"{match.match_id}.json"
         lineup_file = lineup_dir / f"{match.match_id}.json"
@@ -154,18 +162,17 @@ def get_events(season: Season, event_types: Optional[list[str]] = None):
                 event_types=event_types, coordinates="statsbomb",
                 event_factory=CustomStatsBombEventFactory(match.match_datetime)
             )
-            event_list.extend(events)
+            # The event dataset doesn't include the date of the match, for some reason, so we manually add it:
+            events.kickoff_timestamp = match.match_datetime
+            match_datasets.append(events)
         except json.JSONDecodeError:
             print(f"Parse error for match_id {match.match_id}")
 
-
-    return event_list
+    return match_datasets
 
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    from kloppy.statsbomb import load
     data_path = Path(__file__).parent.parent.parent / "data" / "statsbomb"
     events = load(
         data_path / "events" / "7298.json" ,
