@@ -8,11 +8,12 @@ from kloppy.domain import create_event
 from kloppy.domain.models.event import EventDataset
 from kloppy.domain.models.statsbomb.event import StatsBombEventFactory, StatsBombShotEvent, StatsBombPassEvent
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 URL_PREFIX = "https://raw.githubusercontent.com/statsbomb/open-data/master/data/"
 MATCHES_PREFIX = f"{URL_PREFIX}matches/"
 COMPETITIONS_URL = f"{URL_PREFIX}competitions.json"
+
 
 @dataclass
 class Match:
@@ -171,14 +172,20 @@ def get_events(season: Season, event_types: Optional[list[str]] = None) -> List[
     return match_datasets
 
 
-
-if __name__ == "__main__":
-    data_path = Path(__file__).parent.parent.parent / "data" / "statsbomb"
-    events = load(
-        data_path / "events" / "7298.json" ,
-        data_path / "lineups" / "7298.json",
-        event_types=["shot"],
-        coordinates="statsbomb",
-        event_factory=CustomStatsBombEventFactory(datetime.strptime("2021-01-01_12:00:00", "%Y-%m-%d_%H:%M:%S"))
-    )
-    breakpoint()
+def load_competition_seasons(
+        competition_name: str,
+        seasons: Sequence[str],
+        event_types: Optional[list[str]] = None
+):
+    competitions = get_metadata()
+    competition = [comp for comp in competitions if comp.name == competition_name]
+    assert len(competition) == 1
+    competition = competition[0]
+    matches = []
+    for season in competition.seasons:
+        if season.name in seasons:
+            new_matches = get_events(
+                season, event_types=event_types
+            )
+            matches.extend(new_matches)
+    return matches
