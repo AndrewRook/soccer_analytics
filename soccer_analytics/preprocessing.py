@@ -23,7 +23,9 @@ def match_list_to_df(match_list):
             closest_defender_distance=get_closest_defender_distance,
             is_goal=lambda event: int(event.result.is_success),
             is_blocked=lambda event: int(event.result.name == "BLOCKED"),
-            num_blockers=determine_blockers
+            num_blockers=determine_blockers,
+            timestamp=lambda event: event.timestamp,
+            freeze_frame=lambda event: None if "freeze_frame" not in event.raw_event["shot"].keys() else event.raw_event["shot"]["freeze_frame"]
         ))
     return pd.concat(df_list)
 
