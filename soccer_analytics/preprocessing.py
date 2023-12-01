@@ -24,6 +24,7 @@ def match_list_to_df(match_list):
             DistanceToGoalTransformer(),
             BodyPartTransformer(),
             position=lambda event: "Unknown" if event.player.position is None else event.player.position.name,
+            situation=lambda event: event.raw_event["shot"]["type"]["name"],
             closest_defender_distance=get_closest_defender_distance,
             is_goal=lambda event: int(event.result.is_success),
             is_blocked=lambda event: int(event.result.name == "BLOCKED"),
@@ -126,11 +127,25 @@ def get_block_likelihood(
         block_function: Callable,
         goal_x=120.,
         goal_ys=(36, 44),
+        goalie_strategy: str = "exclude",
+        include_teammates: bool = False,
         num_test_points=1000
 ):
+    goalie_strategy = goalie_strategy.lower()
+    if goalie_strategy not in ["exclude", "include", "only"]:
+        raise ValueError("goalie_strategy must be 'exclude', 'include', or 'only'")
+
     goal_y_values = np.linspace(*goal_ys, num_test_points)
     y_block_likelihoods_per_player = np.zeros((num_test_points, len(blocker_info)))
     for i, blocker in enumerate(blocker_info):
+        if blocker["position"]["name"] == "Goalkeeper":
+            if goalie_strategy == "exclude":
+                continue
+        else:
+            if goalie_strategy == "only":
+                continue
+        if include_teammates is False and blocker["teammate"] is True:
+            continue
         blocker_distances = _map_goal_locations_to_distance_from_blocker(
             shot_location, Point(*blocker["location"]), goal_x, goal_y_values
         )
