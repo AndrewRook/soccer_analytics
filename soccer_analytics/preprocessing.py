@@ -28,45 +28,11 @@ def match_list_to_df(match_list):
             closest_defender_distance=get_closest_defender_distance,
             is_goal=lambda event: int(event.result.is_success),
             is_blocked=lambda event: int(event.result.name == "BLOCKED"),
-            #num_blockers=determine_blockers,
             timestamp=lambda event: event.timestamp,
             freeze_frame=lambda event: None if "freeze_frame" not in event.raw_event["shot"].keys() else event.raw_event["shot"]["freeze_frame"]
         ))
     return pd.concat(df_list)
 
-
-# def determine_blockers(event):
-#     shot_location = event.coordinates
-#     offset = 0.5
-#     if "freeze_frame" not in event.raw_event["shot"].keys() and event.raw_event["shot"]["type"]["name"] == "Penalty":
-#         return 0
-#
-#     num_blockers = 0
-#     for entry in event.raw_event["shot"]["freeze_frame"]:
-#         if entry["teammate"] is True or entry["position"]["name"] == "Goalkeeper":
-#             continue
-#
-#         player_position =  Point(*entry["location"])
-#
-#         if shot_location.distance_to(player_position) > 5:
-#             continue
-#
-#         if player_position.x < shot_location.x or player_position.x > 120:
-#             continue
-#
-#         slope_upper = (shot_location.y + offset - 44) / (shot_location.x - 120)
-#         slope_lower = (shot_location.y - offset - 36) / (shot_location.x - 120)
-#         b_upper = (shot_location.y + offset) - slope_upper * shot_location.x
-#         b_lower = (shot_location.y - offset) - slope_lower * shot_location.x
-#         y_coord_upper = slope_upper * player_position.x + b_upper
-#         y_coord_lower = slope_lower * player_position.x + b_lower
-#         if player_position.y > y_coord_upper or player_position.y < y_coord_lower:
-#             continue
-#
-#         num_blockers += 1
-#
-#
-#     return num_blockers
 
 def get_closest_defender_distance(event):
     shot_location = event.coordinates
@@ -99,7 +65,7 @@ def _map_goal_locations_to_distance_from_blocker(
     # First, if the blocker is not between the shot and the goal, return a null value:
     if blocker_location.x <= shot_location.x:
         return np.full_like(goal_y_values, np.nan)
-    # Assuming the blocker is in a position to potentiall impact the play,
+    # Assuming the blocker is in a position to potentially impact the play,
     # get the angle between the shot and the blocker compared to the horizontal axis:
     shot_blocker_angle = math.atan2(
         blocker_location.y - shot_location.y,
@@ -121,22 +87,27 @@ def _map_goal_locations_to_distance_from_blocker(
     return np.abs(min_distances)
 
 
-def get_block_likelihood(
+def get_block_score(
         shot_location: Point,
         blocker_info: list[dict[str, Union[list, dict, str]]],
-        block_function: Callable,
+        block_score_function: Callable,
         goal_x=120.,
         goal_ys=(36, 44),
         goalie_strategy: str = "exclude",
         include_teammates: bool = False,
+        overlap_strategy: str = "ignore",
         num_test_points=1000
 ):
+    overlap_strategy = overlap_strategy.lower()
+    if overlap_strategy not in ["ignore", "compound"]:
+        raise ValueError("overlap_strategy must be one of 'ignore', 'compound'")
+
     goalie_strategy = goalie_strategy.lower()
     if goalie_strategy not in ["exclude", "include", "only"]:
         raise ValueError("goalie_strategy must be 'exclude', 'include', or 'only'")
 
     goal_y_values = np.linspace(*goal_ys, num_test_points)
-    y_block_likelihoods_per_player = np.zeros((num_test_points, len(blocker_info)))
+    y_block_scores_per_player = np.zeros((num_test_points, len(blocker_info)))
     for i, blocker in enumerate(blocker_info):
         if blocker["position"]["name"] == "Goalkeeper":
             if goalie_strategy == "exclude":
@@ -149,22 +120,31 @@ def get_block_likelihood(
         blocker_distances = _map_goal_locations_to_distance_from_blocker(
             shot_location, Point(*blocker["location"]), goal_x, goal_y_values
         )
-        y_block_likelihoods_per_player[:, i] = block_function(
+        y_block_scores_per_player[:, i] = block_score_function(
             blocker_distances, shot_location, blocker, goal_x
         )
 
-    no_block_likelihoods_per_player = 1 - y_block_likelihoods_per_player
-    no_block_likelihoods = np.multiply.reduce(
-        no_block_likelihoods_per_player,
-        axis=1
-    )
-    return 1 - no_block_likelihoods.mean()
+    if overlap_strategy == "ignore":
+        block_scores = np.max(
+            y_block_scores_per_player,
+            axis=1
+        )
+    else:
+        # Treat each score like a probability. First get the "likelihood" of not blocking,
+        # then do one minus that:
+        no_block_scores_per_player = 1 - y_block_scores_per_player
+        no_block_scores = np.multiply.reduce(
+            no_block_scores_per_player,
+            axis=1
+        )
+        block_scores = 1 - no_block_scores
+    return block_scores.mean()
 
 
-def uniform_block_function(block_likelihood=0.9, max_distance=0.5):
+def uniform_block_score(block_score=0.9, max_distance=0.5):
     def inner(blocker_distances, shot_location, blocker, goal_x):
-        likelihood = np.where(blocker_distances < max_distance, block_likelihood, 0)
-        return likelihood
+        score = np.where(blocker_distances < max_distance, block_score, 0)
+        return score
     return inner
 
 
