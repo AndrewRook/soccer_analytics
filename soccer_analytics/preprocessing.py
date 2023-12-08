@@ -148,6 +148,39 @@ def uniform_block_score(block_score=0.9, max_distance=0.5):
     return inner
 
 
+class BlockScore(BaseEstimator, TransformerMixin):
+    def __init__(
+            self,
+            freeze_frame_column: str,
+            x_coordinate_column: str,
+            y_coordinate_column: str,
+            block_score_function: Callable,
+            block_score_column_name: str = "block_score",
+            **get_block_score_kwargs):
+        self.freeze_frame_column = freeze_frame_column
+        self.x_coordinate_column = x_coordinate_column
+        self.y_coordinate_column = y_coordinate_column
+        self.block_score_function = block_score_function
+        self.block_score_column_name = block_score_column_name
+        self.get_block_score_kwargs = get_block_score_kwargs
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        block_score = X.apply(
+            lambda row: 0 if row[self.freeze_frame_column] is None else get_block_score(
+                Point(row[self.x_coordinate_column], row[self.y_coordinate_column]),
+                row[self.freeze_frame_column],
+                self.block_score_function,
+                **self.get_block_score_kwargs
+            ),
+            axis=1
+        )
+        X[self.block_score_column_name] = block_score
+        return X
+
+
 class AngleNormalizer(BaseEstimator, TransformerMixin):
     def __init__(self, variable: str, new_variable: str):
         self.variable = variable
